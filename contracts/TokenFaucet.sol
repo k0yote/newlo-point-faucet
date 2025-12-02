@@ -111,9 +111,9 @@ contract TokenFaucet is Ownable, ReentrancyGuard {
     /**
      * @dev claim可能かチェック
      * @param account 確認するアドレス
-     * @return canClaim claim可能ならtrue
+     * @return result claim可能ならtrue
      */
-    function canClaim(address account) external view returns (bool canClaim) {
+    function canClaim(address account) external view returns (bool result) {
         uint256 lastClaim = lastClaimTime[account];
         if (lastClaim == 0) return true;
         return block.timestamp >= lastClaim + cooldownTime;
