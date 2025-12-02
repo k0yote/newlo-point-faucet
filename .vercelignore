@@ -1,0 +1,11 @@
+# Hardhat files (not needed for Next.js deployment)
+contracts/
+scripts/
+artifacts/
+cache/
+typechain-types/
+hardhat.config.ts
+tsconfig.hardhat.json
+
+# Test files
+test/
