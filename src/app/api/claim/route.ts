@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAddress } from "viem";
 import {
-  publicClient,
+  getPublicClient,
   getWalletClient,
   getOperatorAccount,
-  FAUCET_CONTRACT_ADDRESS,
+  getContractAddresses,
 } from "@/lib/client";
+import { isValidNetworkId, DEFAULT_NETWORK, NetworkId } from "@/lib/networks";
 import { FAUCET_ABI } from "@/lib/abi";
 
 export async function POST(request: NextRequest) {
   try {
-    const { address } = await request.json();
+    const { address, network: networkParam } = await request.json();
+
+    // Validate network
+    const networkId: NetworkId = isValidNetworkId(networkParam)
+      ? networkParam
+      : DEFAULT_NETWORK;
 
     // Validate address
     if (!address || !isAddress(address)) {
@@ -20,17 +26,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Get contract addresses for the network
+    const { faucetAddress } = getContractAddresses(networkId);
+
     // Check if contract is configured
-    if (!FAUCET_CONTRACT_ADDRESS) {
+    if (!faucetAddress) {
       return NextResponse.json(
-        { success: false, error: "Faucet contract not configured" },
+        { success: false, error: "Faucet contract not configured for this network" },
         { status: 500 }
       );
     }
 
+    const publicClient = getPublicClient(networkId);
+
     // Check cooldown
     const canClaim = await publicClient.readContract({
-      address: FAUCET_CONTRACT_ADDRESS,
+      address: faucetAddress,
       abi: FAUCET_ABI,
       functionName: "canClaim",
       args: [address as `0x${string}`],
@@ -38,7 +49,7 @@ export async function POST(request: NextRequest) {
 
     if (!canClaim) {
       const remainingCooldown = await publicClient.readContract({
-        address: FAUCET_CONTRACT_ADDRESS,
+        address: faucetAddress,
         abi: FAUCET_ABI,
         functionName: "getRemainingCooldown",
         args: [address as `0x${string}`],
@@ -57,11 +68,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Execute claimFor transaction
-    const walletClient = getWalletClient();
+    const walletClient = getWalletClient(networkId);
     const account = getOperatorAccount();
 
     const hash = await walletClient.writeContract({
-      address: FAUCET_CONTRACT_ADDRESS,
+      address: faucetAddress,
       abi: FAUCET_ABI,
       functionName: "claimFor",
       args: [address as `0x${string}`],

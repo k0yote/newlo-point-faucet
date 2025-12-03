@@ -23,6 +23,11 @@ const config: HardhatUserConfig = {
       chainId: 1946,
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
     },
+    kaiaKairos: {
+      url: "https://public-en-kairos.node.kaia.io",
+      chainId: 1001,
+      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
+    },
   },
   paths: {
     sources: "./contracts",

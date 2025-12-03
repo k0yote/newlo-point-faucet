@@ -3,7 +3,19 @@
 import { useState, useEffect, useCallback } from "react";
 import { isAddress } from "viem";
 
+interface NetworkInfo {
+  id: string;
+  name: string;
+  explorerUrl: string;
+  isConfigured: boolean;
+}
+
 interface FaucetStatus {
+  network: {
+    id: string;
+    name: string;
+    explorerUrl: string;
+  };
   faucetBalance: string;
   claimAmount: string;
   cooldownTimeSeconds: number;
@@ -24,40 +36,78 @@ interface ClaimResult {
 }
 
 export function FaucetForm() {
+  const [networks, setNetworks] = useState<NetworkInfo[]>([]);
+  const [selectedNetwork, setSelectedNetwork] = useState<string>("");
   const [address, setAddress] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<ClaimResult | null>(null);
   const [status, setStatus] = useState<FaucetStatus | null>(null);
   const [countdown, setCountdown] = useState<number>(0);
 
-  const fetchStatus = useCallback(async (walletAddress?: string) => {
-    try {
-      const url = walletAddress
-        ? `/api/status?address=${walletAddress}`
-        : "/api/status";
-      const response = await fetch(url);
-      if (response.ok) {
-        const data = await response.json();
-        setStatus(data);
-        if (data.userStatus?.remainingCooldownSeconds > 0) {
-          setCountdown(data.userStatus.remainingCooldownSeconds);
+  // Fetch available networks
+  useEffect(() => {
+    async function fetchNetworks() {
+      try {
+        const response = await fetch("/api/networks");
+        if (response.ok) {
+          const data = await response.json();
+          const configuredNetworks = data.networks.filter(
+            (n: NetworkInfo) => n.isConfigured
+          );
+          setNetworks(configuredNetworks);
+          if (configuredNetworks.length > 0 && !selectedNetwork) {
+            setSelectedNetwork(configuredNetworks[0].id);
+          }
         }
+      } catch (error) {
+        console.error("Failed to fetch networks:", error);
       }
-    } catch (error) {
-      console.error("Failed to fetch status:", error);
     }
-  }, []);
+    fetchNetworks();
+  }, [selectedNetwork]);
 
-  useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
+  const fetchStatus = useCallback(
+    async (walletAddress?: string) => {
+      if (!selectedNetwork) return;
 
+      try {
+        const params = new URLSearchParams({ network: selectedNetwork });
+        if (walletAddress) {
+          params.set("address", walletAddress);
+        }
+        const response = await fetch(`/api/status?${params.toString()}`);
+        if (response.ok) {
+          const data = await response.json();
+          setStatus(data);
+          if (data.userStatus?.remainingCooldownSeconds > 0) {
+            setCountdown(data.userStatus.remainingCooldownSeconds);
+          } else {
+            setCountdown(0);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch status:", error);
+      }
+    },
+    [selectedNetwork]
+  );
+
+  // Fetch status when network changes
   useEffect(() => {
-    if (address && isAddress(address)) {
+    if (selectedNetwork) {
+      setResult(null);
+      fetchStatus(address && isAddress(address) ? address : undefined);
+    }
+  }, [selectedNetwork, fetchStatus, address]);
+
+  // Fetch status when address changes
+  useEffect(() => {
+    if (address && isAddress(address) && selectedNetwork) {
       fetchStatus(address);
     }
-  }, [address, fetchStatus]);
+  }, [address, selectedNetwork, fetchStatus]);
 
+  // Countdown timer
   useEffect(() => {
     if (countdown <= 0) return;
 
@@ -97,13 +147,18 @@ export function FaucetForm() {
       return;
     }
 
+    if (!selectedNetwork) {
+      setResult({ success: false, error: "Please select a network" });
+      return;
+    }
+
     setIsLoading(true);
 
     try {
       const response = await fetch("/api/claim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address }),
+        body: JSON.stringify({ address, network: selectedNetwork }),
       });
 
       const data: ClaimResult = await response.json();
@@ -124,21 +179,51 @@ export function FaucetForm() {
     }
   };
 
-  const explorerUrl = result?.transactionHash
-    ? `https://explorer-testnet.soneium.org/tx/${result.transactionHash}`
+  const explorerUrl = result?.transactionHash && status?.network?.explorerUrl
+    ? `${status.network.explorerUrl}/tx/${result.transactionHash}`
     : null;
 
   const isValidAddress = address && isAddress(address);
   const canSubmit =
-    isValidAddress && !isLoading && (status?.userStatus?.canClaim ?? true);
+    isValidAddress &&
+    !isLoading &&
+    selectedNetwork &&
+    (status?.userStatus?.canClaim ?? true);
 
   return (
     <div className="w-full max-w-md mx-auto">
+      {/* Network Selector */}
+      <div className="mb-6">
+        <label
+          htmlFor="network"
+          className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2"
+        >
+          Select Network
+        </label>
+        <select
+          id="network"
+          value={selectedNetwork}
+          onChange={(e) => setSelectedNetwork(e.target.value)}
+          className="w-full px-4 py-3 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+          disabled={isLoading || networks.length === 0}
+        >
+          {networks.length === 0 ? (
+            <option value="">Loading networks...</option>
+          ) : (
+            networks.map((network) => (
+              <option key={network.id} value={network.id}>
+                {network.name}
+              </option>
+            ))
+          )}
+        </select>
+      </div>
+
       {/* Faucet Info */}
       {status && (
         <div className="mb-6 p-4 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
           <h3 className="text-sm font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-            Faucet Info
+            Faucet Info - {status.network.name}
           </h3>
           <div className="space-y-1 text-sm">
             <p>
@@ -190,7 +275,8 @@ export function FaucetForm() {
         {countdown > 0 && isValidAddress && (
           <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
             <p className="text-sm text-yellow-700 dark:text-yellow-400">
-              Cooldown active: <span className="font-mono font-medium">{formatTime(countdown)}</span>
+              Cooldown active:{" "}
+              <span className="font-mono font-medium">{formatTime(countdown)}</span>
             </p>
           </div>
         )}

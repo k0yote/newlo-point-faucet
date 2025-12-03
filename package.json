@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "compile": "hardhat compile",
-    "deploy:minato": "hardhat run scripts/deploy.ts --network soneiumMinato"
+    "deploy:minato": "hardhat run scripts/deploy.ts --network soneiumMinato",
+    "deploy:kairos": "hardhat run scripts/deploy.ts --network kaiaKairos"
   },
   "dependencies": {
     "next": "16.0.6",
